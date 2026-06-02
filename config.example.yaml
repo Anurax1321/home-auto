@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# home-auto configuration (Phase 1)
+#
+# Copy this file to `config.yaml` and edit. `config.yaml` is git-ignored so
+# your real settings never get committed. Secrets (passwords, tokens) do NOT
+# go here -> they live in the `.env` file (see .env.example).
+# ---------------------------------------------------------------------------
+
+# Where you are. Used to fetch the local weather forecast from the US National
+# Weather Service (api.weather.gov, free, US only). Default = downtown Chicago.
+location:
+  latitude: 41.8781
+  longitude: -87.6298
+  timezone: America/Chicago   # ComEd territory is Central time
+
+# How often the service wakes up to fetch prices and re-evaluate.
+polling:
+  interval_seconds: 300        # ComEd publishes a new price every 5 minutes
+
+# Price thresholds in CENTS per kWh. These are the ComEd Hourly Pricing
+# energy-supply rate (not your full delivered bill, but the part that swings).
+thresholds:
+  high_price_cents: 10.0       # at/above this -> "expensive, hold off on big loads"
+  low_price_cents: 3.0         # at/below this -> "cheap, good time to run loads"
+
+# Best-time-to-charge calculator. Finds the cheapest contiguous window long
+# enough to finish a charge before your deadline.
+charging:
+  session_hours: 4             # roughly how long a full charge takes
+  deadline_hour: 7             # must finish by this local hour (24h clock)
+
+# Notification channels. Turn on any combination you like; each fires when a
+# threshold is crossed or the best charge window is found.
+notifications:
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    username: ""               # your SMTP login (often your email address)
+    from_addr: ""              # address the alert is sent from
+    to_addrs: []               # list of recipients, e.g. ["you@example.com"]
+    # The SMTP password is read from the HOME_AUTO_EMAIL_PASSWORD env var.
+
+  ntfy:
+    enabled: false             # free phone push via https://ntfy.sh (install the app)
+    server: https://ntfy.sh
+    topic: ""                  # pick a long, hard-to-guess topic; it is effectively a password
+
+  dashboard:
+    enabled: true              # keep the latest alerts visible on the web dashboard
+
+# Local web dashboard (live price graph + current status + recent alerts).
+dashboard:
+  host: 0.0.0.0                # 0.0.0.0 = reachable from other devices on your LAN
+  port: 8080

@@ -1,0 +1,15 @@
+# Minimal project metadata + tool config. We install deps via requirements.txt
+# (not as a built package), so this file mainly configures pytest.
+
+[project]
+name = "home-auto"
+version = "0.1.0"
+description = "Monitor ComEd electricity prices + weather and optimize home loads (Tesla, thermostat, appliances)."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+# Look for tests in tests/, treat src/ as an importable root.
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"            # any `async def test_*` runs without an explicit marker
+addopts = "-v"

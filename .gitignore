@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Local secrets and config (never commit these)
+.env
+config.yaml
+
+# Runtime data
+data/
+*.log

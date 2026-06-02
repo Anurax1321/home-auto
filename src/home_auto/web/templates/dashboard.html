@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>home-auto dashboard</title>
+  <!-- Chart.js for the price graph; loaded from CDN (needs internet on the viewing device). -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #11151c; color: #e6e6e6; }
+    header { padding: 16px 24px; background: #1b2230; border-bottom: 1px solid #2a3344; }
+    h1 { margin: 0; font-size: 20px; }
+    .muted { color: #8a93a6; font-size: 13px; }
+    main { padding: 24px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .card { background: #1b2230; border: 1px solid #2a3344; border-radius: 10px; padding: 16px; }
+    .card h2 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: #8a93a6; }
+    .price { font-size: 40px; font-weight: 700; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+    .badge.cheap { background: #14532d; color: #86efac; }
+    .badge.normal { background: #334155; color: #cbd5e1; }
+    .badge.expensive { background: #7f1d1d; color: #fca5a5; }
+    .chart-card { grid-column: 1 / -1; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { padding: 8px 0; border-bottom: 1px solid #2a3344; }
+    li:last-child { border-bottom: none; }
+    .alert-warning { color: #fca5a5; }
+    .alert-info { color: #93c5fd; }
+    .err { color: #fca5a5; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>home-auto</h1>
+    <div class="muted">ComEd price + weather monitor · last updated <span id="updated">never</span></div>
+    <div class="err" id="error"></div>
+  </header>
+
+  <main>
+    <div class="card">
+      <h2>Current price</h2>
+      <div class="price"><span id="price">--</span><span class="muted"> ¢/kWh</span></div>
+      <p><span class="badge normal" id="state">unknown</span></p>
+      <div class="muted">This hour avg: <span id="houravg">--</span> ¢/kWh</div>
+    </div>
+
+    <div class="card">
+      <h2>Best time to charge</h2>
+      <div id="window">Calculating…</div>
+    </div>
+
+    <div class="card">
+      <h2>Weather</h2>
+      <div id="weather">--</div>
+    </div>
+
+    <div class="card">
+      <h2>Recent alerts</h2>
+      <ul id="alerts"><li class="muted">none yet</li></ul>
+    </div>
+
+    <div class="card chart-card">
+      <h2>Last 24h prices (¢/kWh)</h2>
+      <canvas id="chart" height="90"></canvas>
+    </div>
+  </main>
+
+  <script>
+    // Format an ISO timestamp as a short local time string.
+    const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '--';
+    const fmtDateTime = (iso) => iso ? new Date(iso).toLocaleString([], {weekday: 'short', hour: '2-digit', minute: '2-digit'}) : '--';
+
+    let chart;
+    function renderChart(prices) {
+      const labels = prices.map(p => fmtTime(p.t));
+      const data = prices.map(p => p.p);
+      if (chart) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = data;
+        chart.update();
+        return;
+      }
+      chart = new Chart(document.getElementById('chart'), {
+        type: 'line',
+        data: { labels, datasets: [{ label: '¢/kWh', data, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,.15)', fill: true, pointRadius: 0, tension: .2 }] },
+        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 12, color: '#8a93a6' } }, y: { ticks: { color: '#8a93a6' } } } }
+      });
+    }
+
+    async function refresh() {
+      let s;
+      try {
+        s = await (await fetch('/api/status')).json();
+      } catch (e) {
+        document.getElementById('error').textContent = 'Could not reach the service.';
+        return;
+      }
+
+      document.getElementById('error').textContent = s.last_error ? ('Last poll issue: ' + s.last_error) : '';
+      document.getElementById('updated').textContent = fmtDateTime(s.updated_at);
+      document.getElementById('price').textContent = s.latest_price ? s.latest_price.p.toFixed(1) : '--';
+      document.getElementById('houravg').textContent = (s.current_hour_average ?? '--');
+
+      const stateEl = document.getElementById('state');
+      stateEl.textContent = s.price_state || 'unknown';
+      stateEl.className = 'badge ' + (s.price_state || 'normal');
+
+      // Charge window recommendation.
+      const w = s.charge_window;
+      document.getElementById('window').innerHTML = w
+        ? `<div class="price" style="font-size:22px">${fmtTime(w.start)} → ${fmtTime(w.end)}</div>
+           <div class="muted">~${w.average_price_cents.toFixed(1)} ¢/kWh average · ${w.duration_hours}h session</div>`
+        : '<span class="muted">No window fits before the deadline. Charging now may be necessary.</span>';
+
+      // Weather. Built with textContent (not innerHTML) so API-sourced strings
+      // can never be interpreted as HTML.
+      const cur = s.weather && s.weather.periods && s.weather.periods[0];
+      const weatherEl = document.getElementById('weather');
+      weatherEl.replaceChildren();
+      if (cur) {
+        const temp = document.createElement('div');
+        temp.className = 'price';
+        temp.style.fontSize = '22px';
+        temp.textContent = `${cur.temperature}°${cur.unit}`;
+        const desc = document.createElement('div');
+        desc.className = 'muted';
+        desc.textContent = `${cur.name}: ${cur.short_forecast}`;
+        weatherEl.append(temp, desc);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'muted';
+        span.textContent = 'unavailable';
+        weatherEl.append(span);
+      }
+
+      // Alerts. Also built via DOM nodes + textContent (no innerHTML).
+      const alertsEl = document.getElementById('alerts');
+      alertsEl.replaceChildren();
+      if (s.alerts && s.alerts.length) {
+        for (const a of s.alerts) {
+          const li = document.createElement('li');
+          const title = document.createElement('span');
+          title.className = a.level === 'warning' ? 'alert-warning' : 'alert-info';
+          title.textContent = a.title;
+          const meta = document.createElement('div');
+          meta.className = 'muted';
+          meta.textContent = `${fmtDateTime(a.created_at)} · ${a.message}`;
+          li.append(title, meta);
+          alertsEl.append(li);
+        }
+      } else {
+        const li = document.createElement('li');
+        li.className = 'muted';
+        li.textContent = 'none yet';
+        alertsEl.append(li);
+      }
+
+      renderChart(s.recent_prices || []);
+    }
+
+    refresh();
+    setInterval(refresh, 30000); // re-poll every 30s
+  </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Run the service with: docker compose up -d
+# Requires Docker. If `docker` is missing in WSL, enable "WSL integration" in
+# Docker Desktop settings, or just run natively (see README "Run without Docker").
+
+services:
+  home-auto:
+    build: .
+    container_name: home-auto
+    restart: unless-stopped
+    ports:
+      - "8080:8080"            # dashboard, reachable at http://<host>:8080
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro   # mount your real config read-only
+    env_file:
+      - .env                   # inject secrets (SMTP password, etc.)
