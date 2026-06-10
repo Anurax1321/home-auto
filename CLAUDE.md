@@ -17,8 +17,8 @@ PYTHONPATH=src .venv/bin/python scripts/smoke_test.py        # live end-to-end
 PYTHONPATH=src .venv/bin/python -m home_auto                 # run service + dashboard
 ```
 
-- Dashboard: **http://localhost:8080** (`/`, `/api/status`, `/healthz`).
-- Config: `config.yaml` (copy from `config.example.yaml`). Secrets: `.env`. Both git-ignored.
+- Dashboard: **http://localhost:8080** (`/`, `/api/status`, `/api/history`, `/api/settings`, `/api/triggers`, `/healthz`).
+- Config: `config.yaml` (copy from `config.example.yaml`). Secrets: `.env`. Runtime state (live thresholds, triggers): `data/*.json` (override dir with `HOME_AUTO_DATA_DIR`). All git-ignored.
 
 ## Conventions
 
@@ -27,6 +27,9 @@ PYTHONPATH=src .venv/bin/python -m home_auto                 # run service + das
 - Notification channels implement `notify/base.py:NotificationChannel` and must never raise out of `send()`.
 - Each external call in `service.poll()` is isolated so one failing API degrades a field, not the whole cycle.
 - Adapters for new data sources / actions / channels go behind their existing interfaces; keep optimization logic in testable Python, not framework glue.
+- Runtime-editable state (thresholds, triggers) lives in `data/*.json` via `storage.py` (atomic writes); never write it back into `config.yaml`. Client input never sets a file path; trigger ids are server-generated.
+- Triggers are notify-only today but `action.type` is a stub for future device control (Phase 2+). Engine logic stays pure in `engine/triggers.py`; the service owns cooldown state and dispatch.
+- Dashboard JS renders all API/user strings with `textContent`, never `innerHTML` (XSS-safe). Light theme is default; dark is a toggle.
 - Always run `pytest` after changes. The data clients are data-handling code: run a security check after touching them, the web app, or the notifier.
 
 ## Key external APIs

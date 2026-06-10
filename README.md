@@ -42,10 +42,15 @@ Weather comes from the US National Weather Service (`api.weather.gov`), which is
 | `sources/weather.py` | NWS forecast client (two-step points -> forecast lookup). |
 | `engine/decision.py` | Classify price vs. thresholds; alert only on state changes. |
 | `engine/charge_window.py` | Build an hourly price profile and find the cheapest window. |
+| `engine/triggers.py` | Evaluate user-defined triggers (pure logic, with cooldown). |
+| `engine/aggregate.py` | Downsample price history to hourly points for the 1W/1M chart. |
 | `notify/` | Pluggable channels (`email`, `ntfy`, `dashboard`) + fan-out manager. |
+| `storage.py` | Atomic JSON read/write helpers for runtime state in `data/`. |
+| `settings_store.py` | Persist live-editable thresholds to `data/settings.json`. |
+| `triggers.py` | Trigger model + CRUD store (`data/triggers.json`). |
 | `state.py` | In-memory snapshot the dashboard renders. |
 | `service.py` | Orchestrator: one `poll()` wires sources -> engine -> notify. |
-| `web/app.py` | FastAPI app: dashboard page + JSON status API. |
+| `web/app.py` | FastAPI app: dashboard page + JSON status/history/settings/triggers API. |
 | `__main__.py` | Entry point: runs the scheduler + web server together. |
 
 ---
@@ -90,7 +95,7 @@ docker compose up -d
 All non-secret settings live in `config.yaml` (copy from `config.example.yaml`). Secrets live in `.env`. Both are git-ignored. Highlights:
 
 - **`location`** — your latitude/longitude (for weather) and timezone.
-- **`thresholds`** — `high_price_cents` (alert + "hold off") and `low_price_cents` ("cheap, good to run loads"), in cents/kWh.
+- **`thresholds`** — `high_price_cents` (alert + "hold off") and `low_price_cents` ("cheap, good to run loads"), in cents/kWh. These are the startup defaults; you can also change them live from the dashboard, which saves an override to `data/settings.json` (loaded back over these on the next start).
 - **`charging`** — `session_hours` (how long a charge takes) and `deadline_hour` (must finish by this local hour).
 - **`notifications`** — enable any combination of `email`, `ntfy`, and `dashboard`.
 - **`dashboard`** — `host`/`port` for the web UI.
@@ -116,8 +121,34 @@ ComEd's public feed gives past + present prices, not a guaranteed forecast. So t
 | Endpoint | Description |
 | --- | --- |
 | `GET /` | The dashboard page (auto-refreshes every 30s). |
-| `GET /api/status` | Full current snapshot as JSON (price, state, charge window, weather, recent prices, alerts). |
+| `GET /api/status` | Full current snapshot as JSON (price, state, charge window, weather, recent prices, alerts, thresholds). |
+| `GET /api/history?range=1d\|1w\|1m\|1y` | Price points for the chart. `1d` is raw 5-minute data; `1w`/`1m` are averaged to one point per hour; `1y` to one point per day (all cached ~5 min). |
+| `GET /api/settings` | Current price thresholds. |
+| `POST /api/settings` | Update thresholds live (`{high_price_cents, low_price_cents}`); persists to `data/settings.json`. |
+| `GET /api/triggers` | List user-defined triggers. |
+| `POST /api/triggers` | Create a trigger. |
+| `PATCH /api/triggers/{id}` | Replace a trigger's fields. |
+| `DELETE /api/triggers/{id}` | Delete a trigger. |
 | `GET /healthz` | Liveness probe. |
+
+### Dashboard features
+
+The page is a minimalist glass UI with a **light** default and a **dark-mode**
+toggle (top-right, remembered in your browser). It shows the current price and
+state, the recommended charge window, weather, and recent alerts.
+
+- **Price chart** with **1D / 1W / 1M / 1Y** ranges. The line is colored per segment
+  (green below your low threshold, red above your high one, neutral between),
+  has a subtle dashed average line and dashed threshold lines (each toggleable),
+  and a hover crosshair that reads out the exact price + time at any point.
+- **Editable thresholds**: change the cheap/expensive cutoffs and they apply
+  live (no restart) and persist to `data/settings.json`, leaving `config.yaml`
+  untouched.
+- **Triggers**: create rules like "current price < 2.5 c/kWh" that fire a
+  notification through your enabled channels, with a per-trigger cooldown so a
+  steady price won't notify you every poll. Today every trigger sends a
+  notification; the `action` field is designed so later phases can attach device
+  actions (charge the car, run the thermostat) to the same rules.
 
 ---
 
@@ -136,7 +167,8 @@ Unit tests mock all network calls with `respx`, so they are fast and offline. Th
 
 - Secrets (SMTP password) are read only from the environment, never from `config.yaml`, and are never logged or returned by the API.
 - The weather client only fetches forecast URLs under `api.weather.gov` (guards against a spoofed redirect).
-- The dashboard has **no authentication** and binds to `0.0.0.0` by default so other devices on your LAN can reach it. The data is low-sensitivity (prices, weather, your coordinates). If your host is exposed beyond your home network, put it behind a reverse proxy with auth or set `dashboard.host` to `127.0.0.1`.
+- All write endpoints validate their input with pydantic (bounded ranges, known channel names, length caps) and persist only to fixed files under `data/`; client input never influences a file path. Trigger ids are server-generated. Dashboard rendering uses `textContent` (never `innerHTML`) so stored trigger text can't inject HTML.
+- The dashboard has **no authentication** and binds to `0.0.0.0` by default so other devices on your LAN can reach it. It now has **mutating** endpoints (edit thresholds, add/delete triggers), so anyone who can reach the page can change those settings. The data is still low-sensitivity (prices, weather, your coordinates) and triggers can only send notifications. If your host is exposed beyond your home network, put it behind a reverse proxy with auth or set `dashboard.host` to `127.0.0.1`. A simple shared-token guard can be added if you want one.
 
 ---
 

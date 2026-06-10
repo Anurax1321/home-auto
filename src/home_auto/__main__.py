@@ -39,6 +39,7 @@ async def run() -> None:
         seconds=config.polling.interval_seconds,
         max_instances=1,         # don't overlap polls if one runs long
         coalesce=True,           # collapse missed runs into one
+        misfire_grace_time=120,  # a run up to 2 min late still counts (no warning)
     )
 
     # Prime the snapshot before serving so the first page load isn't empty.

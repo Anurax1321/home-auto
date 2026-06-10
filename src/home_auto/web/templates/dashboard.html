@@ -3,124 +3,522 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>home-auto dashboard</title>
+  <title>Home Automation</title>
   <!-- Chart.js for the price graph; loaded from CDN (needs internet on the viewing device). -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <style>
-    :root { color-scheme: dark; }
-    body { font-family: system-ui, sans-serif; margin: 0; background: #11151c; color: #e6e6e6; }
-    header { padding: 16px 24px; background: #1b2230; border-bottom: 1px solid #2a3344; }
-    h1 { margin: 0; font-size: 20px; }
-    .muted { color: #8a93a6; font-size: 13px; }
-    main { padding: 24px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-    .card { background: #1b2230; border: 1px solid #2a3344; border-radius: 10px; padding: 16px; }
-    .card h2 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: #8a93a6; }
-    .price { font-size: 40px; font-weight: 700; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; }
-    .badge.cheap { background: #14532d; color: #86efac; }
-    .badge.normal { background: #334155; color: #cbd5e1; }
-    .badge.expensive { background: #7f1d1d; color: #fca5a5; }
-    .chart-card { grid-column: 1 / -1; }
+    /* ---- Theme tokens. Light is the default; [data-theme="dark"] overrides. ---- */
+    :root {
+      --bg: radial-gradient(1200px 800px at 50% -10%, #eaecf0 0%, #e1e4ea 45%, #d7dbe2 100%);
+      --text: #1b2430;
+      --muted: #66728a;
+      --card: rgba(255, 255, 255, 0.55);
+      --card-border: rgba(255, 255, 255, 0.75);
+      --shadow: 0 8px 30px rgba(31, 45, 61, 0.10);
+      --input-bg: rgba(255, 255, 255, 0.7);
+      --input-border: rgba(120, 130, 150, 0.3);
+      --accent: #2f6df6;
+      --grid: rgba(120, 130, 150, 0.18);
+      --pill-bg: rgba(255, 255, 255, 0.5);
+      --pill-active: #2f6df6;
+      --pill-active-text: #ffffff;
+    }
+    [data-theme="dark"] {
+      --bg: linear-gradient(135deg, #0e131b 0%, #161e2c 100%);
+      --text: #e7ebf2;
+      --muted: #8a93a6;
+      --card: rgba(28, 36, 50, 0.55);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+      --input-bg: rgba(20, 26, 36, 0.6);
+      --input-border: rgba(255, 255, 255, 0.12);
+      --accent: #5b8cff;
+      --grid: rgba(160, 170, 190, 0.14);
+      --pill-bg: rgba(255, 255, 255, 0.06);
+      --pill-active: #5b8cff;
+      --pill-active-text: #0e131b;
+    }
+
+    /* Shared accent colors for price states (work on both themes). */
+    .c-green { color: #16a34a; }
+    .c-red { color: #dc2626; }
+
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      margin: 0; min-height: 100vh; color: var(--text);
+      background: var(--bg); background-attachment: fixed;
+      transition: background .3s ease, color .3s ease;
+      /* Column layout so the footer sits at the end of the page (sticky-footer:
+         pinned to the viewport bottom only when content is short, otherwise it
+         scrolls naturally after the content). */
+      display: flex; flex-direction: column;
+    }
+    /* Subtle grain overlay -> matte, non-glossy finish over the flat background. */
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      opacity: .05; mix-blend-mode: multiply;
+    }
+
+    /* ---- Header ---- */
+    header { position: relative; text-align: center; padding: 28px 16px 8px; }
+    header h1 { margin: 0; font-size: 26px; letter-spacing: .2px; font-weight: 700; }
+    .subline { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    .theme-toggle {
+      position: absolute; top: 20px; right: 20px;
+      background: var(--pill-bg); border: 1px solid var(--card-border);
+      color: var(--text); border-radius: 999px; padding: 7px 14px;
+      font-size: 13px; cursor: pointer; backdrop-filter: blur(10px);
+    }
+    .theme-toggle:hover { border-color: var(--accent); }
+    .err { color: #dc2626; font-size: 13px; min-height: 16px; margin-top: 6px; }
+
+    /* ---- Layout ---- */
+    main {
+      padding: 16px 24px 32px; display: grid; gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      max-width: 1200px; margin: 0 auto; width: 100%;
+      flex: 1 0 auto;  /* grow so a short page still pushes the footer down */
+    }
+    .card {
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 16px; padding: 18px; box-shadow: var(--shadow);
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
+    }
+    .card h2 {
+      margin: 0 0 10px; font-size: 12px; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted); font-weight: 600;
+    }
+    .wide { grid-column: 1 / -1; }
+    .price { font-size: 42px; font-weight: 700; line-height: 1.1; }
+    .muted { color: var(--muted); font-size: 13px; }
+
+    .badge {
+      display: inline-block; padding: 4px 12px; border-radius: 999px;
+      font-size: 13px; font-weight: 600; margin-top: 8px;
+    }
+    .badge.cheap { background: rgba(22, 163, 74, .16); color: #16a34a; }
+    .badge.normal { background: rgba(100, 116, 139, .18); color: var(--muted); }
+    .badge.expensive { background: rgba(220, 38, 38, .16); color: #dc2626; }
+
+    /* ---- Chart controls ---- */
+    .chart-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .pills { display: flex; gap: 6px; }
+    .pill {
+      background: var(--pill-bg); border: 1px solid var(--card-border);
+      color: var(--text); border-radius: 999px; padding: 5px 14px;
+      font-size: 13px; cursor: pointer; transition: all .15s ease;
+    }
+    .pill.active { background: var(--pill-active); color: var(--pill-active-text); border-color: transparent; }
+    .toggles { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--muted); }
+    .toggles label { display: flex; gap: 5px; align-items: center; cursor: pointer; }
+
+    /* ---- Forms (settings + triggers) ---- */
+    input, select {
+      background: var(--input-bg); border: 1px solid var(--input-border);
+      color: var(--text); border-radius: 8px; padding: 7px 10px; font-size: 14px;
+      font-family: inherit;
+    }
+    input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+    .btn {
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .btn:hover { filter: brightness(1.06); }
+    .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+    .btn.danger { background: transparent; color: #dc2626; border: 1px solid #dc2626; }
+    .btn.small { padding: 4px 10px; font-size: 12px; }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field label { font-size: 12px; color: var(--muted); }
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; align-items: end; }
+
+    /* ---- Lists (alerts, triggers) ---- */
     ul { list-style: none; margin: 0; padding: 0; }
-    li { padding: 8px 0; border-bottom: 1px solid #2a3344; }
-    li:last-child { border-bottom: none; }
-    .alert-warning { color: #fca5a5; }
-    .alert-info { color: #93c5fd; }
-    .err { color: #fca5a5; font-size: 13px; }
+    .alert-warning { color: #dc2626; font-weight: 600; }
+    .alert-info { color: var(--accent); font-weight: 600; }
+    li.row { padding: 10px 0; border-bottom: 1px solid var(--grid); }
+    li.row:last-child { border-bottom: none; }
+    .trigger-row { display: flex; align-items: center; gap: 10px; }
+    .trigger-row .grow { flex: 1; min-width: 0; }
+    .cond { font-variant-numeric: tabular-nums; }
+    .help { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 10px; }
+
+    /* ---- Footer (sits at the end of the page, not pinned to the viewport) ---- */
+    footer {
+      flex-shrink: 0;
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 22px; font-size: 12px; color: var(--muted);
+      background: var(--card); border-top: 1px solid var(--card-border);
+      backdrop-filter: blur(16px);
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>home-auto</h1>
-    <div class="muted">ComEd price + weather monitor · last updated <span id="updated">never</span></div>
+    <button class="theme-toggle" id="themeToggle" type="button">🌙 Dark</button>
+    <h1>Home Automation</h1>
+    <div class="subline">last updated <span id="updated">never</span></div>
     <div class="err" id="error"></div>
   </header>
 
   <main>
+    <!-- Current price -->
     <div class="card">
       <h2>Current price</h2>
       <div class="price"><span id="price">--</span><span class="muted"> ¢/kWh</span></div>
-      <p><span class="badge normal" id="state">unknown</span></p>
-      <div class="muted">This hour avg: <span id="houravg">--</span> ¢/kWh</div>
+      <span class="badge normal" id="state">unknown</span>
+      <div class="muted" style="margin-top:8px">This hour avg: <span id="houravg">--</span> ¢/kWh</div>
     </div>
 
+    <!-- Charge window -->
     <div class="card">
       <h2>Best time to charge</h2>
       <div id="window">Calculating…</div>
     </div>
 
+    <!-- Weather -->
     <div class="card">
       <h2>Weather</h2>
       <div id="weather">--</div>
     </div>
 
+    <!-- Recent alerts -->
     <div class="card">
       <h2>Recent alerts</h2>
-      <ul id="alerts"><li class="muted">none yet</li></ul>
+      <ul id="alerts"><li class="row muted">none yet</li></ul>
     </div>
 
-    <div class="card chart-card">
-      <h2>Last 24h prices (¢/kWh)</h2>
-      <canvas id="chart" height="90"></canvas>
+    <!-- Price chart -->
+    <div class="card wide">
+      <div class="chart-head">
+        <h2 style="margin:0">Price history (¢/kWh)</h2>
+        <div class="pills" id="ranges">
+          <button class="pill active" data-range="1d">1D</button>
+          <button class="pill" data-range="1w">1W</button>
+          <button class="pill" data-range="1m">1M</button>
+          <button class="pill" data-range="1y">1Y</button>
+        </div>
+        <div class="toggles">
+          <label><input type="checkbox" id="tgAvg" checked /> Average</label>
+          <label><input type="checkbox" id="tgThresh" checked /> Thresholds</label>
+        </div>
+      </div>
+      <canvas id="chart" height="92"></canvas>
+    </div>
+
+    <!-- Settings: editable thresholds -->
+    <div class="card wide">
+      <h2>Price thresholds</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label for="lowInput">Cheap at or below (¢/kWh)</label>
+          <input type="number" id="lowInput" step="0.1" min="0" max="100" />
+        </div>
+        <div class="field">
+          <label for="highInput">Expensive at or above (¢/kWh)</label>
+          <input type="number" id="highInput" step="0.1" min="0" max="100" />
+        </div>
+        <div class="field">
+          <button class="btn" id="saveThresholds" type="button">Save thresholds</button>
+        </div>
+      </div>
+      <div class="help" id="settingsMsg"></div>
+    </div>
+
+    <!-- Triggers -->
+    <div class="card wide">
+      <h2>Triggers</h2>
+      <ul id="triggers"><li class="row muted">no triggers yet</li></ul>
+
+      <h2 style="margin-top:18px" id="formTitle">Add a trigger</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label for="tName">Name</label>
+          <input type="text" id="tName" placeholder="Cheap power" maxlength="80" />
+        </div>
+        <div class="field">
+          <label for="tMetric">When</label>
+          <select id="tMetric">
+            <option value="price">Current price</option>
+            <option value="hour_average">This-hour average</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tOp">is</label>
+          <select id="tOp">
+            <option value="&lt;">below (&lt;)</option>
+            <option value="&lt;=">at or below (&le;)</option>
+            <option value="&gt;">above (&gt;)</option>
+            <option value="&gt;=">at or above (&ge;)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tValue">value (¢/kWh)</label>
+          <input type="number" id="tValue" step="0.1" value="3" />
+        </div>
+        <div class="field">
+          <label for="tCooldown">cooldown (min)</label>
+          <input type="number" id="tCooldown" step="1" min="0" value="60" />
+        </div>
+        <div class="field">
+          <label for="tMessage">message (optional)</label>
+          <input type="text" id="tMessage" placeholder="default text if blank" maxlength="200" />
+        </div>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button class="btn" id="saveTrigger" type="button">Add trigger</button>
+        <button class="btn ghost" id="cancelEdit" type="button" style="display:none">Cancel</button>
+      </div>
+      <div class="help">
+        Triggers fire a notification through your enabled channels whenever the
+        chosen value crosses the condition. <b>Cooldown</b> is the minimum minutes
+        between firings, so a steady price won't notify you every poll. Device
+        actions (charge the car, run the thermostat) plug into this same list in
+        later phases; for now every trigger sends a notification.
+      </div>
     </div>
   </main>
 
+  <footer>
+    <span>ComEd price + weather monitor</span>
+    <span>© Built by Anurag Chinnaboina</span>
+  </footer>
+
   <script>
-    // Format an ISO timestamp as a short local time string.
+    // ---------- Small helpers ----------
+    const $ = (id) => document.getElementById(id);
     const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '--';
     const fmtDateTime = (iso) => iso ? new Date(iso).toLocaleString([], {weekday: 'short', hour: '2-digit', minute: '2-digit'}) : '--';
+    // Tooltip label, tailored to the range: time for 1D, date+hour for 1W/1M, date for 1Y.
+    function fmtTip(iso, range) {
+      const d = new Date(iso);
+      if (range === '1d') return d.toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+      if (range === '1y') return d.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+      return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+    }
+    const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-    let chart;
-    function renderChart(prices) {
-      const labels = prices.map(p => fmtTime(p.t));
-      const data = prices.map(p => p.p);
+    // Shared state read from /api/status and used by the chart.
+    let THR = { high: 10, low: 3 };        // current thresholds (¢/kWh)
+    let currentRange = '1d';
+    let lastRecentPrices = [];             // 1D points, straight from the status snapshot
+    let showAvg = true, showThresholds = true;
+    let chart;                             // Chart.js instance (declared early: applyTheme reads it on load)
+
+    // ---------- Theme (light default, persisted) ----------
+    function applyTheme(theme) {
+      if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        $('themeToggle').textContent = '☀️ Light';
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        $('themeToggle').textContent = '🌙 Dark';
+      }
+      if (chart) styleChartForTheme();
+    }
+    $('themeToggle').addEventListener('click', () => {
+      const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const next = dark ? 'light' : 'dark';
+      localStorage.setItem('theme', next);
+      applyTheme(next);
+    });
+    applyTheme(localStorage.getItem('theme') || 'light');
+
+    // ---------- Chart ----------
+    // Color one line segment by where its right-hand point sits vs thresholds.
+    function segColor(v) {
+      if (v >= THR.high) return '#dc2626';   // expensive -> red
+      if (v <= THR.low) return '#16a34a';    // cheap -> green
+      return '#64748b';                       // normal -> neutral
+    }
+
+    // Plugin: dashed horizontal reference lines for thresholds + average.
+    const refLinesPlugin = {
+      id: 'refLines',
+      afterDatasetsDraw(c) {
+        const o = c.$refLines; if (!o) return;
+        const { ctx, chartArea, scales: { y } } = c;
+        const line = (val, color, dash) => {
+          if (val == null) return;
+          const yp = y.getPixelForValue(val);
+          if (yp < chartArea.top || yp > chartArea.bottom) return;
+          ctx.save(); ctx.beginPath(); ctx.setLineDash(dash);
+          ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+          ctx.moveTo(chartArea.left, yp); ctx.lineTo(chartArea.right, yp);
+          ctx.stroke(); ctx.restore();
+        };
+        if (o.showThresholds) { line(o.high, '#dc2626', [6, 4]); line(o.low, '#16a34a', [6, 4]); }
+        if (o.showAvg) line(o.avg, cssVar('--muted') || '#888', [3, 3]);
+      }
+    };
+
+    // Plugin: vertical crosshair following the hovered point (Robinhood-style).
+    const crosshairPlugin = {
+      id: 'crosshair',
+      afterDraw(c) {
+        const act = c.getActiveElements();
+        if (!act || !act.length) return;
+        const x = act[0].element.x;
+        const { ctx, chartArea } = c;
+        ctx.save(); ctx.beginPath();
+        ctx.moveTo(x, chartArea.top); ctx.lineTo(x, chartArea.bottom);
+        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(120,130,150,0.55)';
+        ctx.stroke(); ctx.restore();
+      }
+    };
+
+    function styleChartForTheme() {
+      if (!chart) return;
+      const grid = cssVar('--grid'), muted = cssVar('--muted');
+      chart.options.scales.x.grid.color = grid;
+      chart.options.scales.y.grid.color = grid;
+      chart.options.scales.x.ticks.color = muted;
+      chart.options.scales.y.ticks.color = muted;
+      chart.update('none');
+    }
+
+    // points: [{t: iso, p: number}]; range controls the x-axis label format.
+    function renderChart(points, range) {
+      const times = points.map(p => p.t);
+      const data = points.map(p => p.p);
+      const labels = points.map(p => {
+        const d = new Date(p.t);
+        return range === '1d'
+          ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          : d.toLocaleDateString([], { month: 'numeric', day: 'numeric' });
+      });
+      const avg = data.length ? data.reduce((a, b) => a + b, 0) / data.length : null;
+
       if (chart) {
+        chart._times = times;
+        chart._range = range;
         chart.data.labels = labels;
         chart.data.datasets[0].data = data;
+        chart.$refLines = { high: THR.high, low: THR.low, avg, showAvg, showThresholds };
         chart.update();
         return;
       }
-      chart = new Chart(document.getElementById('chart'), {
+
+      chart = new Chart($('chart'), {
         type: 'line',
-        data: { labels, datasets: [{ label: '¢/kWh', data, borderColor: '#60a5fa', backgroundColor: 'rgba(96,165,250,.15)', fill: true, pointRadius: 0, tension: .2 }] },
-        options: { plugins: { legend: { display: false } }, scales: { x: { ticks: { maxTicksLimit: 12, color: '#8a93a6' } }, y: { ticks: { color: '#8a93a6' } } } }
+        data: {
+          labels,
+          datasets: [{
+            data,
+            borderColor: '#64748b',
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.25,
+            fill: false,
+            // Per-segment coloring: each segment colored by its endpoint value.
+            segment: { borderColor: (ctx) => segColor(ctx.p1.parsed.y) },
+          }],
+        },
+        options: {
+          animation: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: (items) => fmtTip(chart._times[items[0].dataIndex], chart._range),
+                label: (item) => `${item.parsed.y.toFixed(2)} ¢/kWh`,
+              },
+            },
+          },
+          scales: {
+            x: { grid: { color: cssVar('--grid') }, ticks: { color: cssVar('--muted'), maxTicksLimit: 12 } },
+            y: { grid: { color: cssVar('--grid') }, ticks: { color: cssVar('--muted') } },
+          },
+        },
+        plugins: [refLinesPlugin, crosshairPlugin],
       });
+      chart._times = times;
+      chart._range = range;
+      chart.$refLines = { high: THR.high, low: THR.low, avg, showAvg, showThresholds };
+      chart.update();
     }
 
+    // Load chart data for the selected range. 1D reuses the status snapshot;
+    // 1W/1M fetch hourly-averaged history from the API.
+    async function loadChart(range) {
+      if (range === '1d') { renderChart(lastRecentPrices, '1d'); return; }
+      try {
+        const r = await fetch('/api/history?range=' + range);
+        if (!r.ok) throw new Error('history ' + r.status);
+        const body = await r.json();
+        renderChart(body.points || [], range);
+      } catch (e) {
+        $('error').textContent = 'Could not load ' + range + ' history.';
+      }
+    }
+
+    // Range pills.
+    $('ranges').addEventListener('click', (e) => {
+      const btn = e.target.closest('.pill'); if (!btn) return;
+      currentRange = btn.dataset.range;
+      document.querySelectorAll('#ranges .pill').forEach(p => p.classList.toggle('active', p === btn));
+      loadChart(currentRange);
+    });
+
+    // Toggle pills for average / threshold reference lines.
+    $('tgAvg').addEventListener('change', (e) => { showAvg = e.target.checked; if (chart) { chart.$refLines.showAvg = showAvg; chart.update('none'); } });
+    $('tgThresh').addEventListener('change', (e) => { showThresholds = e.target.checked; if (chart) { chart.$refLines.showThresholds = showThresholds; chart.update('none'); } });
+
+    // ---------- Status refresh (cards) ----------
     async function refresh() {
       let s;
       try {
         s = await (await fetch('/api/status')).json();
       } catch (e) {
-        document.getElementById('error').textContent = 'Could not reach the service.';
+        $('error').textContent = 'Could not reach the service.';
         return;
       }
 
-      document.getElementById('error').textContent = s.last_error ? ('Last poll issue: ' + s.last_error) : '';
-      document.getElementById('updated').textContent = fmtDateTime(s.updated_at);
-      document.getElementById('price').textContent = s.latest_price ? s.latest_price.p.toFixed(1) : '--';
-      document.getElementById('houravg').textContent = (s.current_hour_average ?? '--');
+      $('error').textContent = s.last_error ? ('Last poll issue: ' + s.last_error) : '';
+      $('updated').textContent = fmtDateTime(s.updated_at);
+      $('price').textContent = s.latest_price ? s.latest_price.p.toFixed(1) : '--';
+      $('houravg').textContent = (s.current_hour_average ?? '--');
 
-      const stateEl = document.getElementById('state');
+      const stateEl = $('state');
       stateEl.textContent = s.price_state || 'unknown';
       stateEl.className = 'badge ' + (s.price_state || 'normal');
 
-      // Charge window recommendation.
-      const w = s.charge_window;
-      document.getElementById('window').innerHTML = w
-        ? `<div class="price" style="font-size:22px">${fmtTime(w.start)} → ${fmtTime(w.end)}</div>
-           <div class="muted">~${w.average_price_cents.toFixed(1)} ¢/kWh average · ${w.duration_hours}h session</div>`
-        : '<span class="muted">No window fits before the deadline. Charging now may be necessary.</span>';
+      // Thresholds drive both the chart coloring and the settings inputs.
+      if (s.thresholds) {
+        THR = { high: s.thresholds.high, low: s.thresholds.low };
+        if (document.activeElement !== $('highInput')) $('highInput').value = THR.high;
+        if (document.activeElement !== $('lowInput')) $('lowInput').value = THR.low;
+      }
 
-      // Weather. Built with textContent (not innerHTML) so API-sourced strings
-      // can never be interpreted as HTML.
+      // Charge window.
+      const w = s.charge_window;
+      const winEl = $('window');
+      winEl.replaceChildren();
+      if (w) {
+        const top = document.createElement('div');
+        top.className = 'price'; top.style.fontSize = '22px';
+        top.textContent = `${fmtTime(w.start)} → ${fmtTime(w.end)}`;
+        const sub = document.createElement('div');
+        sub.className = 'muted';
+        sub.textContent = `~${w.average_price_cents.toFixed(1)} ¢/kWh average · ${w.duration_hours}h session`;
+        winEl.append(top, sub);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'muted';
+        span.textContent = 'No window fits before the deadline. Charging now may be necessary.';
+        winEl.append(span);
+      }
+
+      // Weather (textContent only; never innerHTML for API strings).
       const cur = s.weather && s.weather.periods && s.weather.periods[0];
-      const weatherEl = document.getElementById('weather');
-      weatherEl.replaceChildren();
+      const weatherEl = $('weather'); weatherEl.replaceChildren();
       if (cur) {
         const temp = document.createElement('div');
-        temp.className = 'price';
-        temp.style.fontSize = '22px';
+        temp.className = 'price'; temp.style.fontSize = '22px';
         temp.textContent = `${cur.temperature}°${cur.unit}`;
         const desc = document.createElement('div');
         desc.className = 'muted';
@@ -128,38 +526,152 @@
         weatherEl.append(temp, desc);
       } else {
         const span = document.createElement('span');
-        span.className = 'muted';
-        span.textContent = 'unavailable';
+        span.className = 'muted'; span.textContent = 'unavailable';
         weatherEl.append(span);
       }
 
-      // Alerts. Also built via DOM nodes + textContent (no innerHTML).
-      const alertsEl = document.getElementById('alerts');
-      alertsEl.replaceChildren();
+      // Alerts.
+      const alertsEl = $('alerts'); alertsEl.replaceChildren();
       if (s.alerts && s.alerts.length) {
         for (const a of s.alerts) {
-          const li = document.createElement('li');
+          const li = document.createElement('li'); li.className = 'row';
           const title = document.createElement('span');
           title.className = a.level === 'warning' ? 'alert-warning' : 'alert-info';
           title.textContent = a.title;
           const meta = document.createElement('div');
           meta.className = 'muted';
           meta.textContent = `${fmtDateTime(a.created_at)} · ${a.message}`;
-          li.append(title, meta);
-          alertsEl.append(li);
+          li.append(title, meta); alertsEl.append(li);
         }
       } else {
-        const li = document.createElement('li');
-        li.className = 'muted';
-        li.textContent = 'none yet';
-        alertsEl.append(li);
+        const li = document.createElement('li'); li.className = 'row muted';
+        li.textContent = 'none yet'; alertsEl.append(li);
       }
 
-      renderChart(s.recent_prices || []);
+      // Keep the 1D snapshot fresh; re-render only if we're viewing 1D.
+      lastRecentPrices = s.recent_prices || [];
+      if (currentRange === '1d') renderChart(lastRecentPrices, '1d');
     }
 
+    // ---------- Settings: edit thresholds ----------
+    $('saveThresholds').addEventListener('click', async () => {
+      const high = parseFloat($('highInput').value);
+      const low = parseFloat($('lowInput').value);
+      const msg = $('settingsMsg');
+      try {
+        const r = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ high_price_cents: high, low_price_cents: low }),
+        });
+        if (!r.ok) { const e = await r.json(); throw new Error((e.detail && JSON.stringify(e.detail)) || r.status); }
+        const body = await r.json();
+        THR = { high: body.thresholds.high_price_cents, low: body.thresholds.low_price_cents };
+        if (chart) { chart.$refLines.high = THR.high; chart.$refLines.low = THR.low; chart.update('none'); }
+        msg.textContent = 'Saved. Thresholds applied live.'; msg.style.color = '#16a34a';
+      } catch (e) {
+        msg.textContent = 'Could not save: ' + e.message; msg.style.color = '#dc2626';
+      }
+    });
+
+    // ---------- Triggers CRUD ----------
+    let editingId = null;
+    const opLabel = { '<': '<', '<=': '≤', '>': '>', '>=': '≥' };
+    const metricLabel = { price: 'price', hour_average: 'hour-avg' };
+
+    async function loadTriggers() {
+      let list = [];
+      try { list = await (await fetch('/api/triggers')).json(); } catch (e) { return; }
+      const ul = $('triggers'); ul.replaceChildren();
+      if (!list.length) {
+        const li = document.createElement('li'); li.className = 'row muted';
+        li.textContent = 'no triggers yet'; ul.append(li); return;
+      }
+      for (const t of list) {
+        const li = document.createElement('li'); li.className = 'row trigger-row';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.checked = t.enabled; cb.title = 'enabled';
+        cb.addEventListener('change', () => saveTrigger({ ...t, enabled: cb.checked }, t.id));
+
+        const grow = document.createElement('div'); grow.className = 'grow';
+        const name = document.createElement('div'); name.textContent = t.name; name.style.fontWeight = '600';
+        const cond = document.createElement('div'); cond.className = 'muted cond';
+        cond.textContent = `${metricLabel[t.metric] || t.metric} ${opLabel[t.operator] || t.operator} ${t.value} ¢/kWh · cooldown ${t.cooldown_minutes}m`;
+        grow.append(name, cond);
+
+        const edit = document.createElement('button'); edit.className = 'btn ghost small'; edit.textContent = 'Edit';
+        edit.addEventListener('click', () => startEdit(t));
+        const del = document.createElement('button'); del.className = 'btn danger small'; del.textContent = 'Delete';
+        del.addEventListener('click', () => deleteTrigger(t.id));
+
+        li.append(cb, grow, edit, del); ul.append(li);
+      }
+    }
+
+    function readForm() {
+      return {
+        name: $('tName').value.trim(),
+        enabled: true,
+        metric: $('tMetric').value,
+        operator: $('tOp').value,
+        value: parseFloat($('tValue').value),
+        cooldown_minutes: parseInt($('tCooldown').value, 10),
+        action: { type: 'notify', channels: [], message: $('tMessage').value.trim() },
+      };
+    }
+
+    function startEdit(t) {
+      editingId = t.id;
+      $('tName').value = t.name; $('tMetric').value = t.metric; $('tOp').value = t.operator;
+      $('tValue').value = t.value; $('tCooldown').value = t.cooldown_minutes;
+      $('tMessage').value = (t.action && t.action.message) || '';
+      $('formTitle').textContent = 'Edit trigger';
+      $('saveTrigger').textContent = 'Update trigger';
+      $('cancelEdit').style.display = '';
+    }
+
+    function resetForm() {
+      editingId = null;
+      $('tName').value = ''; $('tValue').value = '3'; $('tCooldown').value = '60'; $('tMessage').value = '';
+      $('formTitle').textContent = 'Add a trigger';
+      $('saveTrigger').textContent = 'Add trigger';
+      $('cancelEdit').style.display = 'none';
+    }
+    $('cancelEdit').addEventListener('click', resetForm);
+
+    async function saveTrigger(payload, id) {
+      const isEdit = id != null;
+      const r = await fetch('/api/triggers' + (isEdit ? '/' + id : ''), {
+        method: isEdit ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        $('settingsMsg').textContent = 'Trigger error: ' + ((e.detail && JSON.stringify(e.detail)) || r.status);
+        $('settingsMsg').style.color = '#dc2626';
+        return;
+      }
+      await loadTriggers();
+    }
+
+    $('saveTrigger').addEventListener('click', async () => {
+      if (!$('tName').value.trim()) { $('tName').focus(); return; }
+      await saveTrigger(readForm(), editingId);
+      resetForm();
+    });
+
+    async function deleteTrigger(id) {
+      await fetch('/api/triggers/' + id, { method: 'DELETE' });
+      await loadTriggers();
+    }
+
+    // ---------- Boot ----------
     refresh();
-    setInterval(refresh, 30000); // re-poll every 30s
+    loadChart('1d');
+    loadTriggers();
+    setInterval(refresh, 30000); // re-poll status every 30s
   </script>
 </body>
 </html>

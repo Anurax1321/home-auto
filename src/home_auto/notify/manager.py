@@ -36,19 +36,29 @@ class NotificationManager:
     def channels(self) -> list[NotificationChannel]:
         return self._channels
 
-    async def dispatch(self, alert: Alert) -> None:
-        """Send one alert through every channel concurrently.
+    async def dispatch(
+        self, alert: Alert, channels: list[str] | None = None
+    ) -> None:
+        """Send one alert through the enabled channels concurrently.
+
+        If `channels` is given (a list of channel names), the alert goes only to
+        those channels; an empty list or None means all enabled channels. This
+        lets a trigger target, say, only ntfy. Unknown names are simply ignored.
 
         return_exceptions=True ensures one channel failing never prevents the
         others from delivering, and never propagates out to the polling loop.
         """
-        if not self._channels:
+        targets = self._channels
+        if channels:
+            wanted = set(channels)
+            targets = [c for c in self._channels if c.name in wanted]
+        if not targets:
             return
         results = await asyncio.gather(
-            *(channel.send(alert) for channel in self._channels),
+            *(channel.send(alert) for channel in targets),
             return_exceptions=True,
         )
-        for channel, result in zip(self._channels, results):
+        for channel, result in zip(targets, results):
             if isinstance(result, Exception):
                 log.error("channel %s failed: %r", channel.name, result)
 
